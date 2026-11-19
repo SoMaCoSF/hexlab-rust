@@ -70,7 +70,11 @@ install.sh            Omarchy/Linux one-shot (same shape)
 | `hexlab city export FILE [--format xthread\|spec]` | @PalmerLuckey X reply / engineering spec from live telemetry |
 | `hexlab spoken "<text>" [--city FILE]` | spoken-world grammar: "install a band saw", "create a bom for a woodshop and stock it" |
 | `hexlab kit plan <facility> [--size] [-o FILE]` | AnyScene plan JSON for a facility BOM |
+| `hexlab kit plan-module <module> [--size]` | AnyScene plan for one HEX module (shell + channel-wedge BOM) |
 | `hexlab kit job <anykit\|anymachine> "<prompt>" [--item …]` | local job folder + manifest under `kits/<id>/` |
+| `hexlab kit module <module> [--size]` | queue a HEX module creation job (AnyMachine) |
+| `hexlab kit run <job-id> [--blender PATH]` | generate on the LOCAL Blender → `module.glb` + library entry |
+| `hexlab library [--json]` | the HEX module library: 8 stock modules + generated creations |
 | `hexlab-tui [--city city.json]` | fullscreen TUI (`--snapshot` renders one frame headlessly) |
 
 ### One-shot install

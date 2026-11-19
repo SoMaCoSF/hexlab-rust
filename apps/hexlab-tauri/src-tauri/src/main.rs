@@ -94,6 +94,27 @@ fn kit_plan(facility: String, size: String) -> Result<serde_json::Value, String>
 }
 
 #[tauri::command]
+fn library_list(project: String) -> Result<serde_json::Value, String> {
+    let lib = hexlab_core::library::Library::load(std::path::Path::new(&project))?;
+    serde_json::to_value(&lib).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn kit_module(
+    project: String,
+    module: String,
+    size: String,
+) -> Result<serde_json::Value, String> {
+    let module = hexlab_core::types::ModuleType::from_str(&module)?;
+    let size = SizeClass::from_str(&size)?;
+    let job = hexlab_core::kit::KitJob::module_job(module, size);
+    job.write_manifest(std::path::Path::new(&project))
+        .map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "job_id": job.id, "status": "queued",
+        "run": format!("hexlab kit run {} --project {project}", job.id) }))
+}
+
+#[tauri::command]
 fn export_brief(state: tauri::State<State>, format: String) -> String {
     let city = state.city.lock().unwrap();
     match format.as_str() {
@@ -114,6 +135,8 @@ fn main() {
             facility_bom,
             spoken,
             kit_plan,
+            library_list,
+            kit_module,
             export_brief
         ])
         .run(tauri::generate_context!())

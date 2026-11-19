@@ -47,6 +47,15 @@ pub struct KitJob {
     pub status: JobStatus,
     /// Folder the job lives in, relative to the project root.
     pub out_dir: String,
+    /// Hex-module generation jobs only: the inframodule to generate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub module: Option<crate::types::ModuleType>,
+    /// Hex-module generation jobs only: the size class to generate at.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<SizeClass>,
+    /// Landed artifact (e.g. `module.glb`), relative to the job folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact: Option<String>,
 }
 
 impl KitJob {
@@ -77,7 +86,34 @@ impl KitJob {
             items,
             style: style.to_string(),
             status: JobStatus::Queued,
+            module: None,
+            size: None,
+            artifact: None,
         }
+    }
+
+    /// A hex-module generation job: AnyMachine builds the module shell
+    /// locally in Blender (`generate::run_job`), and the result joins
+    /// the HEX module library. This is the "creations" flow — the app
+    /// is local precisely because Blender is local.
+    pub fn module_job(module: crate::types::ModuleType, size: SizeClass) -> Self {
+        let mut job = Self::new(
+            KitKind::AnyMachine,
+            &format!("hex module {} {}", module.as_str(), size.as_str()),
+            vec![],
+            "marine-industrial",
+        );
+        job.module = Some(module);
+        job.size = Some(size);
+        job
+    }
+
+    /// Read a job manifest back from `<project>/kits/<id>/job.json`.
+    pub fn read_manifest(project_dir: &std::path::Path, job_id: &str) -> Result<Self, String> {
+        let path = project_dir.join("kits").join(job_id).join("job.json");
+        let text = std::fs::read_to_string(&path)
+            .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        serde_json::from_str(&text).map_err(|e| format!("bad manifest {}: {e}", path.display()))
     }
 
     /// Write the job manifest into `<project>/kits/<id>/job.json`.
@@ -126,6 +162,52 @@ pub fn facility_bom_to_anyscene_plan(bom: &FacilityBom, size: SizeClass) -> serd
             "up": "Z",
         },
         "objects": objects,
+    })
+}
+
+/// AnyScene plan for a single HEX module: the room IS the hex, and the
+/// objects are the kit's six primary channel wedges plus the corridor
+/// spine — the BOM a module is kitted from before fit-out. This is how
+/// anyscene "builds a BOM and kits it out" for any module, not just
+/// whole facilities.
+pub fn module_to_anyscene_plan(
+    module: crate::types::ModuleType,
+    size: SizeClass,
+) -> serde_json::Value {
+    let layout = crate::tube::layout_for_cell(size, crate::tube::CellLengthClass::L40);
+    let wedges: Vec<serde_json::Value> = crate::tube::CHANNELS
+        .iter()
+        .take(6)
+        .enumerate()
+        .map(|(i, c)| {
+            serde_json::json!({
+                "asset_id": format!("channel_wedge_{}", c.id.as_str()),
+                "name": format!("{} wedge", c.id.as_str()),
+                "wedge_index": i,
+                "channel": c.id.as_str(),
+                "w": layout.wedge_depth_m,
+                "d": layout.length_m,
+                "generate": true,
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "module": module.as_str(),
+        "code": module.code(),
+        "room": {
+            "shape": "hex",
+            "size_class": size.as_str(),
+            "flat_to_flat_m": size.ff_m(),
+            "area_m2": size.area_m2(),
+            "corridor_ff_m": layout.corridor_ff,
+            "length_m": layout.length_m,
+            "up": "Z",
+        },
+        "shell": {
+            "generator": "scripts/hex_module.py (Blender, local)",
+            "artifact": "module.glb",
+        },
+        "objects": wedges,
     })
 }
 

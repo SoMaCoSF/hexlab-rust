@@ -6,6 +6,9 @@
 //!   hexlab city towers city.json
 //!   hexlab spoken "create a bom for a woodshop and stock it" --city city.json
 //!   hexlab kit plan woodshop -o plan.json
+//!   hexlab kit module flight --size standard   (queue a module creation)
+//!   hexlab kit run machine-hex-module-flight-standard   (Blender, local)
+//!   hexlab library   (the HEX module library: stock + generated)
 
 use clap::{Parser, Subcommand};
 use hexlab_core::axial::Axial;
@@ -13,7 +16,9 @@ use hexlab_core::catalog::{
     asset_by_id, asset_hf_url, get_facility_bom, FACILITY_BOMS, INDUSTRIAL_ASSETS,
 };
 use hexlab_core::city::{City, StockedItem};
-use hexlab_core::kit::{facility_bom_to_anyscene_plan, KitJob, KitKind};
+use hexlab_core::generate::{run_job, RunOutcome};
+use hexlab_core::kit::{facility_bom_to_anyscene_plan, module_to_anyscene_plan, KitJob, KitKind};
+use hexlab_core::library::Library;
 use hexlab_core::spoken::{help_text, parse_spoken, SpokenOp};
 use hexlab_core::tube::{
     channel_spec, layout_for_cell, layout_for_tower, CellLengthClass, Channel, CHANNELS,
@@ -69,6 +74,13 @@ enum Cmd {
     Kit {
         #[command(subcommand)]
         cmd: KitCmd,
+    },
+    /// The HEX module library (stock modules + generated creations)
+    Library {
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -136,6 +148,34 @@ enum KitCmd {
         /// Project root the job folder lands under (kits/<id>/)
         #[arg(long, default_value = ".")]
         project: PathBuf,
+    },
+    /// Export an AnyScene plan for a single HEX module (shell + channel-wedge BOM)
+    PlanModule {
+        module: ModuleType,
+        #[arg(long, default_value = "standard")]
+        size: SizeClass,
+        #[arg(short, long)]
+        out: Option<PathBuf>,
+    },
+    /// Queue a HEX module generation job (AnyMachine, local Blender)
+    Module {
+        module: ModuleType,
+        #[arg(long, default_value = "standard")]
+        size: SizeClass,
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+    },
+    /// Run a queued hex-module job on the local Blender; lands module.glb + registers it in the library
+    Run {
+        job_id: String,
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+        /// Blender executable (default: find on PATH / standard locations)
+        #[arg(long)]
+        blender: Option<PathBuf>,
+        /// Generator script (scripts/hex_module.py in this repo)
+        #[arg(long, default_value = "scripts/hex_module.py")]
+        script: PathBuf,
     },
 }
 
@@ -400,10 +440,59 @@ fn run() -> Result<(), String> {
                     .write_manifest(&project)
                     .map_err(|e| format!("cannot write job manifest: {e}"))?;
                 println!("queued {:?} job {} → {}", job.kind, job.id, path.display());
-                println!("status: queued — generation runs outside the app (AnyKit: fal/Blender; AnyMachine: Blender/USD); assets land in {}", job.out_dir);
+                println!("status: queued — hex-module jobs generate locally: hexlab kit run {} (Blender); prop kits land assets in {}", job.id, job.out_dir);
+                Ok(())
+            }
+            KitCmd::PlanModule { module, size, out } => {
+                let plan = module_to_anyscene_plan(module, size);
+                let text = serde_json::to_string_pretty(&plan).unwrap();
+                match out {
+                    Some(path) => std::fs::write(&path, text)
+                        .map(|_| println!("wrote AnyScene module plan for {} → {}", module.as_str(), path.display()))
+                        .map_err(|e| e.to_string()),
+                    None => {
+                        println!("{text}");
+                        Ok(())
+                    }
+                }
+            }
+            KitCmd::Module { module, size, project } => {
+                let job = KitJob::module_job(module, size);
+                let path = job
+                    .write_manifest(&project)
+                    .map_err(|e| format!("cannot write job manifest: {e}"))?;
+                println!("queued AnyMachine hex-module job {} → {}", job.id, path.display());
+                println!("generate it on this machine: hexlab kit run {} --project {}", job.id, project.display());
+                Ok(())
+            }
+            KitCmd::Run { job_id, project, blender, script } => {
+                match run_job(&project, &job_id, blender.as_deref(), &script)? {
+                    RunOutcome::Ready { artifact } => {
+                        println!("READY {job_id} → {}", artifact.display());
+                        println!("registered in the HEX module library ({})", Library::path(&project).display());
+                    }
+                    RunOutcome::BlenderNotFound => {
+                        println!("Blender not found on this machine — job '{job_id}' stays QUEUED.");
+                        println!("HexLab generates locally: install Blender (blender.org) or pass --blender <path>.");
+                    }
+                    RunOutcome::NotGeneratable(why) => println!("not generatable: {why}"),
+                }
                 Ok(())
             }
         },
+        Cmd::Library { project, json } => {
+            let lib = Library::load(&project)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&lib).unwrap());
+            } else {
+                println!("HEX MODULE LIBRARY // {} entries ({})", lib.entries.len(), Library::path(&project).display());
+                for e in &lib.entries {
+                    let art = e.artifact.as_deref().unwrap_or("—");
+                    println!("  {:28} {:?}/{:?}  {}", e.id, e.kind, e.source, art);
+                }
+            }
+            Ok(())
+        }
     }
 }
 

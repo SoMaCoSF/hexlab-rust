@@ -1,6 +1,6 @@
 <!--
 Ghost Catalog
-SOM-DOC-10857-v1.0.0
+SOM-DOC-10857-v1.1.0
 HexLab local (Rust) — architecture: core, CLI, TUI, Tauri, anyMACHINE/anyKIT
 -->
 
@@ -64,6 +64,46 @@ face gate), Drainable Dry-Dock (DD, ballast), Sub-Launching Harbor
 (SH, moonpool), Refinery (RF), Desalination (DS), Lab (LB), Power (PW).
 Presets: 7-hex recon (scout), 19-hex carrier hub (standard), sandbox.
 
+## The library, and why the app is local
+
+The point of the local Rust app (founder, 2026-11-18): the anyMACHINE
+and anyKIT **creations** need a home — a **library of HEX-based
+modules** — and generation needs **Blender, which runs locally**. A
+web app can't drive your Blender; this app can. spoken-world provides
+the voice that speaks to the library and the build; anyscene turns
+any module or facility into a BOM and kits it out.
+
+```mermaid
+sequenceDiagram
+    participant V as spoken-world (voice)
+    participant A as HexLab app (core)
+    participant B as Blender (local)
+    participant L as HEX module library
+    V->>A: "create a flight hex, standard"
+    A->>A: kit module flight → job queued
+    A->>B: kit run — blender --background hex_module.py
+    B-->>A: module.glb lands in kits/<job>/
+    A->>L: register generated entry (library.json)
+    V->>A: "place a flight hex" / "stock the machine shop"
+    A->>L: draw module / BOM from the same library
+```
+
+- **Library** (`core::library`): stock shelf = the 8 inframodules;
+  every landed generation registers as a `Generated` entry with its
+  artifact path. Persisted as `<project>/library.json`. One library —
+  the city builder, spoken UX, and BOM flow all draw from it.
+- **Generation** (`core::generate`): `run_job` finds Blender (PATH or
+  standard install locations), runs `scripts/hex_module.py` headless
+  (procedural hex-tube shell: outer wall, corridor wall, end rings —
+  the shared substrate every module starts from), lands `module.glb`,
+  flips the manifest to Ready, registers the library entry. **No
+  Blender → the job stays Queued and says so.** Module fit-out
+  (flight gate, moonpool, dry-dock floor) layers on the shell in the
+  AnyMachine pipeline next.
+- **AnyScene for modules** (`kit plan-module`): the room is the hex;
+  the BOM is the shell plus the six primary channel wedges — anyscene
+  kits out *any module*, not just whole facilities.
+
 ## anyKIT + anyMACHINE
 
 - **anyKIT catalog** (`core::catalog`): the USDCraft-10K industrial
@@ -75,11 +115,12 @@ Presets: 7-hex recon (scout), 19-hex carrier hub (standard), sandbox.
   spoken-world's HexLab bridge — "install a band saw", "create a bom
   for a woodshop and stock it", "stock the machine shop". Local and
   free; a voice front-end (OS speech APIs) feeds the same parser.
-- **Jobs** (`core::kit`): AnyKit (reference → prop kit) and AnyMachine
-  (description → machine rig) run *outside* the app — Blender, fal,
-  Tripo/Meshy need their own runtimes/keys. The app owns the job: a
-  folder under `project/kits/<id>/` with a manifest, the BOM/plan that
-  feeds the pipeline, and a landing place for returned GLB/USD.
+- **Jobs** (`core::kit`): a folder under `project/kits/<id>/` with a
+  manifest, the BOM/plan that feeds the pipeline, and a landing place
+  for returned GLB/USD. Hex-module jobs generate *inside* the app via
+  the local Blender (above); AnyKit prop generation (fal/Tripo/Meshy)
+  still runs outside — it needs network + keys — and lands in the
+  same job folders.
   `facility_bom_to_anyscene_plan` converts a BOM into an AnyScene plan
   (room = hex class, objects carry footprints + `usdcraft_path`,
   `generate: false` when the harvest has the mesh).
