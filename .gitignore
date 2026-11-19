@@ -1,0 +1,4 @@
+target/
+*.json
+!apps/hexlab-tauri/src-tauri/tauri.conf.json
+kits/

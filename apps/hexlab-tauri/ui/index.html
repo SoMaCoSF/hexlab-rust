@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HexLab — Modular Floating Hex City</title>
+<style>
+  /* Floating-panel chrome in the monohud doctrine: dark matte, mono,
+     zero-chroma panels, colour reserved for status/module identity.
+     Platform is fullscreen; every component floats over it. */
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; background: #070b12; color: #dbe4ee; font-family: "JetBrains Mono", ui-monospace, monospace; overflow: hidden; }
+  #platform { position: fixed; inset: 0; background: radial-gradient(1200px 700px at 50% 42%, #0b1622 0%, #070b12 70%); }
+  #platform svg { width: 100%; height: 100%; display: block; }
+  .panel { position: absolute; width: 248px; background: rgba(10, 16, 24, .92); border: 1px solid #22314a; border-radius: 6px; padding: 10px 12px; backdrop-filter: blur(6px); box-shadow: 0 8px 28px rgba(0,0,0,.5); }
+  .panel h2 { font-size: 11px; letter-spacing: .12em; color: #67e8f9; border-bottom: 1px solid #22314a; padding-bottom: 6px; margin-bottom: 8px; cursor: move; user-select: none; }
+  .panel .row { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
+  .panel button { background: #0d1622; color: #dbe4ee; border: 1px solid #22314a; border-radius: 4px; font: inherit; font-size: 11px; padding: 4px 8px; cursor: pointer; }
+  .panel button.active { border-color: #06b6d4; color: #67e8f9; }
+  .panel button:hover { border-color: #67e8f9; }
+  .brush { display: block; width: 100%; text-align: left; margin: 2px 0; }
+  input[type=range] { width: 100%; accent-color: #06b6d4; }
+  input[type=text] { width: 100%; background: #070b12; border: 1px solid #22314a; border-radius: 4px; color: #fbbf24; font: inherit; font-size: 12px; padding: 6px; }
+  #brand { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-size: 12px; letter-spacing: .18em; color: #94a3b8; }
+  #brand b { color: #fff; }
+  .hex { cursor: pointer; stroke: #22314a; stroke-width: 1; }
+  .hex:hover { stroke: #67e8f9; }
+  .hexlabel { fill: #0b1220; font-size: 11px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+  .tower { fill: #f59e0b; pointer-events: none; }
+  pre { white-space: pre-wrap; font-size: 11px; max-height: 260px; overflow: auto; }
+</style>
+</head>
+<body>
+<div id="platform"><svg id="sea" viewBox="-420 -300 840 600" preserveAspectRatio="xMidYMid meet"></svg></div>
+<div id="brand"><b>HEXLAB</b>.SOMACOSF.COM // ANYMACHINE — TAURI SHELL (CORE VIA INVOKE WHEN PACKAGED)</div>
+
+<div class="panel" id="p-palette" style="top:48px; left:14px;">
+  <h2>01 // HEX-MODULE PALETTE</h2>
+  <div id="brushes"></div>
+  <div class="row" style="margin-top:8px;">
+    <button data-preset="recon">7-HEX RECON</button>
+    <button data-preset="carrier" class="active">19-HEX CARRIER</button>
+    <button data-preset="sandbox">SANDBOX</button>
+  </div>
+</div>
+
+<div class="panel" id="p-kine" style="top:48px; right:14px;">
+  <h2>02 // KINEMATICS</h2>
+  <div class="row"><span>FLIGHT-HARBOR GATE</span><span id="gate-val">68°</span></div>
+  <input type="range" id="gate" min="0" max="100" value="75">
+  <div class="row"><span>DRY-DOCK BALLAST</span><span id="ballast-val">0%</span></div>
+  <input type="range" id="ballast" min="0" max="100" value="0">
+  <div class="row"><span>SPOKEN</span></div>
+  <input type="text" id="spoken" placeholder='try: stock the machine shop'>
+  <div class="row"><span id="spoken-out" style="color:#fbbf24;"></span></div>
+</div>
+
+<div class="panel" id="p-tele" style="bottom:14px; right:14px;">
+  <h2>03 // LIVE ARRAY TELEMETRY</h2>
+  <div id="telemetry"></div>
+</div>
+
+<div class="panel" id="p-export" style="bottom:14px; left:14px; width:340px;">
+  <h2>04 // EXPORT X REPLY / BRIEF</h2>
+  <div class="row"><button id="btn-x">X THREAD</button><button id="btn-spec">SPEC SHEET</button></div>
+  <pre id="export-out"></pre>
+</div>
+
+<script>
+// First frontend for the Tauri shell. When packaged, window.__TAURI__
+// invoke() calls the Rust commands in src-tauri (same hexlab-core as
+// the CLI/TUI). In a plain browser it runs the identical model in JS
+// so the shell is testable anywhere.
+const SQ3 = Math.sqrt(3);
+const MODULES = { core:['H1','#164e63'], flight:['FH','#f59e0b'], drydock:['DD','#10b981'], subhub:['SH','#a855f7'], refinery:['RF','#ef4444'], desal:['DS','#3b82f6'], lab:['LB','#e2e8f0'], power:['PW','#fb7185'] };
+const SIZES = { scout:16, standard:32, industrial:64, capital:128 };
+let brush = 'core', size = 'standard';
+let cells = new Map(); // "q,r" -> {q,r,type,size}
+const key = (q,r) => q+','+r;
+function preset(name){
+  cells.clear();
+  if (name==='sandbox') return render();
+  if (name==='recon'){
+    const s='scout';
+    cells.set(key(0,0),{q:0,r:0,type:'subhub',size:s});
+    [[1,0,'flight'],[0,1,'core'],[-1,1,'drydock'],[-1,0,'flight'],[0,-1,'power'],[1,-1,'core']].forEach(([q,r,t])=>cells.set(key(q,r),{q,r,type:t,size:s}));
+  } else {
+    const s='standard';
+    cells.set(key(0,0),{q:0,r:0,type:'subhub',size:s});
+    [[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]].forEach(([q,r])=>cells.set(key(q,r),{q,r,type:'core',size:s}));
+    [[2,0,'flight'],[1,1,'core'],[0,2,'flight'],[-1,2,'drydock'],[-2,2,'flight'],[-2,1,'refinery'],[-2,0,'flight'],[-1,-1,'desal'],[0,-2,'flight'],[1,-2,'drydock'],[2,-2,'flight'],[2,-1,'lab']].forEach(([q,r,t])=>cells.set(key(q,r),{q,r,type:t,size:s}));
+  }
+  render();
+}
+function world(q,r,ff){ const R=ff/SQ3; return [ff*(q+r/2), R*1.5*r]; }
+function hexPoints(cx,cz,ff){ const R=ff/SQ3; let p=[]; for(let i=0;i<6;i++){ const a=Math.PI/3*i-Math.PI/6; p.push((cx+R*Math.cos(a)).toFixed(1)+','+(cz+R*Math.sin(a)).toFixed(1)); } return p.join(' '); }
+function vertices(){
+  const m = new Map();
+  cells.forEach(c=>{ const ff=SIZES[c.size]; const [cx,cz]=world(c.q,c.r,ff); const R=ff/SQ3;
+    for(let i=0;i<6;i++){ const a=Math.PI/3*i-Math.PI/6; const vx=cx+R*Math.cos(a), vz=cz+R*Math.sin(a); const k=vx.toFixed(2)+','+vz.toFixed(2); m.set(k,(m.get(k)||0)+1); } });
+  return m;
+}
+function telemetry(){
+  const v = vertices(); let towers=0; v.forEach(d=>{ if(d>=2) towers++; });
+  const total = cells.size;
+  let area=0, disp=0, core=0;
+  cells.forEach(c=>{ const a=(SQ3/2)*SIZES[c.size]**2; area+=a; disp+=2200*(a/886.81); if(c.type==='core'){ core++; area+=680*(a/886.81); disp+=380*(a/886.81);} });
+  const count = t => [...cells.values()].filter(c=>c.type===t).length;
+  const stability = total? Math.min(99.4, 84 + (towers/total)*8.5) : 0;
+  return { total, area, disp, nodes: v.size, towers, stability, flight: count('flight'), drydock: count('drydock'), subhub: count('subhub') };
+}
+function render(){
+  const svg = document.getElementById('sea'); const NS='http://www.w3.org/2000/svg';
+  svg.innerHTML='';
+  // placeable slots radius 3
+  for(let q=-3;q<=3;q++) for(let r=Math.max(-3,-q-3);r<=Math.min(3,-q+3);r++){
+    const [x,z]=world(q,r,SIZES[size]);
+    const poly=document.createElementNS(NS,'polygon');
+    poly.setAttribute('points', hexPoints(x,z,SIZES[size]*0.94));
+    poly.setAttribute('class','hex'); poly.setAttribute('fill','rgba(34,49,74,0.12)');
+    poly.addEventListener('click',()=>{ const k=key(q,r); if(cells.has(k)) cells.delete(k); else cells.set(k,{q,r,type:brush,size}); render(); });
+    svg.appendChild(poly);
+  }
+  cells.forEach(c=>{ const ff=SIZES[c.size]; const [x,z]=world(c.q,c.r,ff);
+    const poly=document.createElementNS(NS,'polygon');
+    poly.setAttribute('points', hexPoints(x,z,ff*0.94));
+    poly.setAttribute('class','hex'); poly.setAttribute('fill', MODULES[c.type][1]+'55'); poly.setAttribute('stroke', MODULES[c.type][1]);
+    poly.addEventListener('click',()=>{ cells.delete(key(c.q,c.r)); render(); });
+    svg.appendChild(poly);
+    const t=document.createElementNS(NS,'text'); t.setAttribute('x',x); t.setAttribute('y',z+4); t.setAttribute('class','hexlabel'); t.setAttribute('fill', MODULES[c.type][1]); t.textContent=MODULES[c.type][0]; svg.appendChild(t);
+  });
+  vertices().forEach((d,k)=>{ if(d<2) return; const [x,z]=k.split(',').map(Number);
+    const c=document.createElementNS(NS,'circle'); c.setAttribute('cx',x); c.setAttribute('cy',z); c.setAttribute('r',3.2); c.setAttribute('class','tower'); svg.appendChild(c); });
+  const t = telemetry();
+  document.getElementById('telemetry').innerHTML =
+    [['HEX UNITS', t.total],['DECK AREA', Math.round(t.area).toLocaleString()+' m²'],['INTERLOCK NODES', t.nodes],['VERTEX TOWERS', t.towers],['THRUSTERS', t.towers],['DISPLACEMENT', Math.round(t.disp).toLocaleString()+' t'],['BAYS', (t.flight+t.drydock+t.subhub)+' ('+t.flight+' FH/'+t.drydock+' DD/'+t.subhub+' SH)'],['STABILITY', t.stability.toFixed(1)+'%']]
+    .map(([k,v])=>'<div class="row"><span>'+k+'</span><span>'+v+'</span></div>').join('');
+  window._tele = t;
+}
+const brushes = document.getElementById('brushes');
+Object.entries(MODULES).forEach(([id,[code]])=>{ const b=document.createElement('button'); b.className='brush'+(id===brush?' active':''); b.textContent=code+' '+id; b.onclick=()=>{ brush=id; document.querySelectorAll('.brush').forEach(x=>x.classList.remove('active')); b.classList.add('active'); }; brushes.appendChild(b); });
+document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>preset(b.dataset.preset));
+document.getElementById('gate').oninput = e=>{ document.getElementById('gate-val').textContent = Math.round(e.target.value*0.9)+'°'; };
+document.getElementById('ballast').oninput = e=>{ document.getElementById('ballast-val').textContent = e.target.value+'%'; };
+document.getElementById('spoken').addEventListener('keydown', async e=>{
+  if(e.key!=='Enter') return;
+  const text = e.target.value;
+  if (window.__TAURI__) { const r = await window.__TAURI__.core.invoke('spoken', { text }); document.getElementById('spoken-out').textContent = JSON.stringify(r); }
+  else document.getElementById('spoken-out').textContent = 'browser demo — spoken runs via hexlab-core when packaged';
+});
+function brief(x){ const t=window._tele||telemetry();
+  if(x) return '@PalmerLuckey Why deselect Hexagons? … '+t.total+' active hexes / '+Math.round(t.area).toLocaleString()+' m² deck / '+t.towers+' vertex towers with tuck swivel thrusters. Full brief: run `hexlab city export` (core generates the live text).';
+  return 'HEXLAB SPEC // '+t.total+' hexes · '+t.nodes+' interlock nodes · '+t.towers+' towers · '+Math.round(t.disp).toLocaleString()+' t displacement · stability '+t.stability.toFixed(1)+'%'; }
+document.getElementById('btn-x').onclick=()=>{ document.getElementById('export-out').textContent = brief(true); };
+document.getElementById('btn-spec').onclick=()=>{ document.getElementById('export-out').textContent = brief(false); };
+// draggable floating panels (grab the h2)
+document.querySelectorAll('.panel').forEach(p=>{ const h=p.querySelector('h2'); let dx,dy,drag=false;
+  h.addEventListener('pointerdown',e=>{ drag=true; dx=e.clientX-p.offsetLeft; dy=e.clientY-p.offsetTop; h.setPointerCapture(e.pointerId); });
+  h.addEventListener('pointermove',e=>{ if(drag){ p.style.left=(e.clientX-dx)+'px'; p.style.top=(e.clientY-dy)+'px'; p.style.right='auto'; p.style.bottom='auto'; } });
+  h.addEventListener('pointerup',()=>drag=false); });
+preset('carrier');
+</script>
+</body>
+</html>

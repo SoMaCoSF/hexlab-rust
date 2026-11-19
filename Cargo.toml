@@ -1,3 +1,4 @@
 [workspace]
 resolver = "2"
-members = ["crates/hexlab-core", "crates/hexlab-cli"]
+members = ["crates/hexlab-core", "crates/hexlab-cli", "crates/hexlab-tui"]
+exclude = ["apps/hexlab-tauri/src-tauri"]

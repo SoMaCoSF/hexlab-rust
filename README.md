@@ -34,3 +34,63 @@ crates/hexlab-core   topology, channels, BOMs, tube/tower
 crates/hexlab-cli    `hexlab` binary
 apps/hexlab-tauri    Tauri notes (Rust ≥1.77)
 ```
+
+---
+
+## Extended (2026-11-18) — the build Grok ran out of time on
+
+Grok's scaffold commit carried only the `Cargo.toml`s and this README —
+no source. This tree now contains the full local build, ported from the
+live web build (`SoMaCoSF/hexlab-platform` → hexlab.somacosf.com) and
+the Gemini marine configurator, with the pieces Grok lost rebuilt.
+
+```
+crates/hexlab-core    axial topology · hex-tube kit (10 channels,
+                      cell/tower sections) · city + presets · vertex
+                      towers · telemetry · anyKIT catalog (USDCraft-10K
+                      + 7 facility BOMs) · spoken grammar · kit jobs +
+                      AnyScene plans · export briefs
+crates/hexlab-cli     `hexlab` binary (below)
+crates/hexlab-tui     `hexlab-tui` binary — fullscreen TUI, floating
+                      panels: palette / platform / telemetry / log
+apps/hexlab-tauri     Tauri 2 shell (Rust + OS webview, not Electron):
+                      invoke commands over hexlab-core + first UI
+                      (fullscreen platform, floating draggable panels)
+docs/ARCHITECTURE.md  SOM-DOC-10857 — model, kit, jobs, provenance
+install.ps1           Windows one-shot: clone → build → smoke → run
+install.sh            Omarchy/Linux one-shot (same shape)
+```
+
+### More commands
+
+| Command | What |
+|---------|------|
+| `hexlab assets [--json]` | anyKIT catalog (31 USDCraft-10K industrial assets) |
+| `hexlab city telemetry FILE [--json]` | area, interlocks, towers, thrusters, displacement, stability |
+| `hexlab city export FILE [--format xthread\|spec]` | @PalmerLuckey X reply / engineering spec from live telemetry |
+| `hexlab spoken "<text>" [--city FILE]` | spoken-world grammar: "install a band saw", "create a bom for a woodshop and stock it" |
+| `hexlab kit plan <facility> [--size] [-o FILE]` | AnyScene plan JSON for a facility BOM |
+| `hexlab kit job <anykit\|anymachine> "<prompt>" [--item …]` | local job folder + manifest under `kits/<id>/` |
+| `hexlab-tui [--city city.json]` | fullscreen TUI (`--snapshot` renders one frame headlessly) |
+
+### One-shot install
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/SoMaCoSF/hexlab-rust/main/install.ps1 | iex
+```
+
+Omarchy / Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SoMaCoSF/hexlab-rust/main/install.sh | bash
+```
+
+### What runs fully local
+
+Hex city, Build Bay model, section/cell/tower/matrix math, BOMs,
+spoken grammar (OS speech APIs feed it), telemetry, exports — yes,
+100% local. AnyKit/AnyMachine *generation* runs outside the app
+(Blender locally; fal/Tripo/Meshy need network + keys) — the app owns
+the job folders and stocks the results. See `docs/ARCHITECTURE.md`.
